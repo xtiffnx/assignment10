@@ -27,3 +27,8 @@
 **Prompt:** "Enable token-by-token response streaming using stream=True and render chunks live in Streamlit, then save the final response to chat history."
 **AI Suggestion:** Replaced the non-streaming request flow with SSE streaming (`requests.post(..., stream=True)` plus payload `stream: true`), parsed `data:` events and appended `choices[0].delta.content` incrementally into a live assistant placeholder, added a tiny per-chunk delay to make streaming visibly incremental, and persisted only the completed assembled assistant response once streaming ended.
 **My Modifications & Reflections:** Integrated streaming into the existing per-chat persistence workflow so each active chat still saves correctly after generation completes.
+
+### Task: Task 3 - User Memory
+**Prompt:** "Extract user traits/preferences after each assistant response, persist memory in memory.json, show memory in sidebar with reset control, and inject memory into future prompts."
+**AI Suggestion:** Added persistent memory utilities for `memory.json`, created a sidebar `User Memory` expander with `Clear Memory`, injected stored memory into a system prompt on each chat request, and added a second lightweight post-response API call that extracts JSON memory updates from the latest user message and merges them into saved memory.
+**My Modifications & Reflections:** Kept extraction robust by parsing plain/fenced JSON safely and only applying valid dictionary patches so bad extraction outputs do not break the app.
