@@ -17,3 +17,8 @@
 **Prompt:** "Add sidebar chat management with New Chat, chat switching, active-chat highlighting, timestamps, and per-chat delete buttons."
 **AI Suggestion:** Refactored session state from a single message list into a multi-chat structure (`chats`, `active_chat_id`, `chat_counter`), added a scrollable sidebar chat list with `New Chat` and `X` delete controls, highlighted the active chat using native Streamlit button styles, and routed all message rendering/API context to the selected chat only.
 **My Modifications & Reflections:** Ensured deleting the active chat automatically switches to another chat when available, or falls back to a clean empty state.
+
+### Task: Task 1 Part D - Chat Persistence
+**Prompt:** "Persist each chat as its own JSON file in chats/, auto-load chats on startup, and delete chat files when the chat is removed."
+**AI Suggestion:** Added disk persistence utilities in `app.py` (`save_chat`, `load_chats_from_disk`, `delete_chat_file`) using the `chats/` directory, wired startup initialization to load saved chats into sidebar state, saved updates after user/assistant messages and title changes, and removed the corresponding JSON file on chat deletion.
+**My Modifications & Reflections:** Kept one-file-per-chat storage with required fields (`id`, `title`, `created_at`, `messages`) so reopening the app restores prior conversations cleanly.

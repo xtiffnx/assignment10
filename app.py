@@ -1,14 +1,17 @@
 from datetime import datetime
+import json
+from pathlib import Path
 
 import requests
 import streamlit as st
 
 HF_CHAT_URL = "https://router.huggingface.co/v1/chat/completions"
 MODEL_NAME = "meta-llama/Llama-3.2-1B-Instruct"
+CHATS_DIR = Path("chats")
 
 st.set_page_config(page_title="My AI Chat", layout="wide")
 st.title("My AI Chat")
-st.caption("Task 1C: Chat Management")
+st.caption("Task 1D: Chat Persistence")
 
 hf_token = st.secrets.get("HF_TOKEN", "").strip()
 if not hf_token:
@@ -63,20 +66,80 @@ def get_assistant_reply(messages):
         return None
 
 
+def ensure_chats_dir():
+    CHATS_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def chat_file_path(chat_id):
+    return CHATS_DIR / f"{chat_id}.json"
+
+
+def save_chat(chat):
+    ensure_chats_dir()
+    with chat_file_path(chat["id"]).open("w", encoding="utf-8") as f:
+        json.dump(chat, f, indent=2)
+
+
+def delete_chat_file(chat_id):
+    path = chat_file_path(chat_id)
+    if path.exists():
+        path.unlink()
+
+
+def load_chats_from_disk():
+    ensure_chats_dir()
+    loaded_chats = []
+    max_counter = 0
+
+    for path in sorted(CHATS_DIR.glob("*.json"), reverse=True):
+        try:
+            with path.open("r", encoding="utf-8") as f:
+                chat = json.load(f)
+            if not isinstance(chat, dict):
+                continue
+
+            chat_id = chat.get("id")
+            title = chat.get("title")
+            created_at = chat.get("created_at")
+            messages = chat.get("messages")
+            if not isinstance(chat_id, str) or not isinstance(title, str):
+                continue
+            if not isinstance(created_at, str) or not isinstance(messages, list):
+                continue
+
+            loaded_chats.append(
+                {
+                    "id": chat_id,
+                    "title": title,
+                    "created_at": created_at,
+                    "messages": messages,
+                }
+            )
+
+            if chat_id.startswith("chat_"):
+                try:
+                    max_counter = max(max_counter, int(chat_id.split("_", 1)[1]))
+                except (ValueError, IndexError):
+                    pass
+        except (OSError, json.JSONDecodeError):
+            continue
+
+    return loaded_chats, max_counter
+
+
 def create_new_chat():
     st.session_state.chat_counter += 1
     chat_id = f"chat_{st.session_state.chat_counter}"
     created_at = datetime.now().strftime("%b %d, %I:%M %p")
-    st.session_state.chats.insert(
-        0,
-        {
-            "id": chat_id,
-            "title": "New Chat",
-            "created_at": created_at,
-            "messages": [],
-        },
-    )
+    new_chat = {
+        "id": chat_id,
+        "title": "New Chat",
+        "created_at": created_at,
+        "messages": [],
+    }
+    st.session_state.chats.insert(0, new_chat)
     st.session_state.active_chat_id = chat_id
+    save_chat(new_chat)
 
 
 def get_active_chat():
@@ -92,8 +155,14 @@ if "active_chat_id" not in st.session_state:
     st.session_state.active_chat_id = None
 if "chat_counter" not in st.session_state:
     st.session_state.chat_counter = 0
-if not st.session_state.chats:
-    create_new_chat()
+if "chats_initialized" not in st.session_state:
+    loaded_chats, max_counter = load_chats_from_disk()
+    st.session_state.chats = loaded_chats
+    st.session_state.chat_counter = max_counter
+    st.session_state.active_chat_id = loaded_chats[0]["id"] if loaded_chats else None
+    if not st.session_state.chats:
+        create_new_chat()
+    st.session_state.chats_initialized = True
 
 with st.sidebar:
     st.subheader("Chats")
@@ -119,6 +188,7 @@ with st.sidebar:
             if chat_cols[1].button("X", key=f"delete_{chat['id']}", use_container_width=True):
                 deleted_active_chat = chat["id"] == st.session_state.active_chat_id
                 st.session_state.chats = [c for c in st.session_state.chats if c["id"] != chat["id"]]
+                delete_chat_file(chat["id"])
 
                 if deleted_active_chat:
                     if st.session_state.chats:
@@ -142,9 +212,11 @@ if prompt and active_chat is not None:
     active_chat["messages"].append({"role": "user", "content": prompt})
     if active_chat["title"] == "New Chat":
         active_chat["title"] = prompt[:28] + ("..." if len(prompt) > 28 else "")
+    save_chat(active_chat)
 
     with st.spinner("Thinking..."):
         assistant_reply = get_assistant_reply(active_chat["messages"])
     if assistant_reply is not None:
         active_chat["messages"].append({"role": "assistant", "content": assistant_reply})
+        save_chat(active_chat)
     st.rerun()
