@@ -6,21 +6,23 @@ MODEL_NAME = "meta-llama/Llama-3.2-1B-Instruct"
 
 st.set_page_config(page_title="My AI Chat", layout="wide")
 st.title("My AI Chat")
-st.caption("Task 1A: Page Setup and API Connection")
+st.caption("Task 1B: Multi-Turn Conversation UI")
 
 hf_token = st.secrets.get("HF_TOKEN", "").strip()
 if not hf_token:
     st.error("Missing HF_TOKEN. Add it to .streamlit/secrets.toml and rerun the app.")
     st.stop()
 
-payload = {
-    "model": MODEL_NAME,
-    "messages": [{"role": "user", "content": "Hello!"}],
-    "max_tokens": 256,
-}
 headers = {"Authorization": f"Bearer {hf_token}"}
 
-with st.spinner("Sending test message to Hugging Face..."):
+
+def get_assistant_reply(messages):
+    payload = {
+        "model": MODEL_NAME,
+        "messages": messages,
+        "max_tokens": 256,
+    }
+
     try:
         response = requests.post(
             HF_CHAT_URL,
@@ -32,10 +34,10 @@ with st.spinner("Sending test message to Hugging Face..."):
         data = response.json()
     except requests.exceptions.Timeout:
         st.error("Request timed out. The API may be busy; please try again.")
-        st.stop()
+        return None
     except requests.exceptions.ConnectionError:
         st.error("Network error while contacting Hugging Face. Check your connection and try again.")
-        st.stop()
+        return None
     except requests.exceptions.HTTPError:
         status_code = response.status_code
         if status_code in (401, 403):
@@ -44,19 +46,42 @@ with st.spinner("Sending test message to Hugging Face..."):
             st.error("Rate limit reached. Please wait and try again.")
         else:
             st.error(f"API error ({status_code}): {response.text[:300]}")
-        st.stop()
+        return None
     except requests.exceptions.RequestException as exc:
         st.error(f"Request failed: {exc}")
-        st.stop()
+        return None
     except ValueError:
         st.error("API returned invalid JSON.")
-        st.stop()
+        return None
 
-try:
-    model_reply = data["choices"][0]["message"]["content"]
-except (KeyError, IndexError, TypeError):
-    st.error("Unexpected API response format.")
-    st.stop()
+    try:
+        return data["choices"][0]["message"]["content"]
+    except (KeyError, IndexError, TypeError):
+        st.error("Unexpected API response format.")
+        return None
 
-st.subheader("Model Reply")
-st.write(model_reply)
+
+if "messages" not in st.session_state:
+    st.session_state.messages = []
+
+history_container = st.container(height=520, border=True)
+with history_container:
+    for message in st.session_state.messages:
+        with st.chat_message(message["role"]):
+            st.write(message["content"])
+
+prompt = st.chat_input("Type a message and press Enter")
+if prompt:
+    st.session_state.messages.append({"role": "user", "content": prompt})
+
+    with history_container:
+        with st.chat_message("user"):
+            st.write(prompt)
+        with st.chat_message("assistant"):
+            with st.spinner("Thinking..."):
+                assistant_reply = get_assistant_reply(st.session_state.messages)
+            if assistant_reply is not None:
+                st.write(assistant_reply)
+
+    if assistant_reply is not None:
+        st.session_state.messages.append({"role": "assistant", "content": assistant_reply})
