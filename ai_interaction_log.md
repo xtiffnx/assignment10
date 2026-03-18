@@ -22,3 +22,8 @@
 **Prompt:** "Persist each chat as its own JSON file in chats/, auto-load chats on startup, and delete chat files when the chat is removed."
 **AI Suggestion:** Added disk persistence utilities in `app.py` (`save_chat`, `load_chats_from_disk`, `delete_chat_file`) using the `chats/` directory, wired startup initialization to load saved chats into sidebar state, saved updates after user/assistant messages and title changes, and removed the corresponding JSON file on chat deletion.
 **My Modifications & Reflections:** Kept one-file-per-chat storage with required fields (`id`, `title`, `created_at`, `messages`) so reopening the app restores prior conversations cleanly.
+
+### Task: Task 2 - Response Streaming
+**Prompt:** "Enable token-by-token response streaming using stream=True and render chunks live in Streamlit, then save the final response to chat history."
+**AI Suggestion:** Replaced the non-streaming request flow with SSE streaming (`requests.post(..., stream=True)` plus payload `stream: true`), parsed `data:` events and appended `choices[0].delta.content` incrementally into a live assistant placeholder, added a tiny per-chunk delay to make streaming visibly incremental, and persisted only the completed assembled assistant response once streaming ended.
+**My Modifications & Reflections:** Integrated streaming into the existing per-chat persistence workflow so each active chat still saves correctly after generation completes.

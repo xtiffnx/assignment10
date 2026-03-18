@@ -1,6 +1,7 @@
 from datetime import datetime
 import json
 from pathlib import Path
+import time
 
 import requests
 import streamlit as st
@@ -11,7 +12,7 @@ CHATS_DIR = Path("chats")
 
 st.set_page_config(page_title="My AI Chat", layout="wide")
 st.title("My AI Chat")
-st.caption("Task 1D: Chat Persistence")
+st.caption("Task 2: Response Streaming")
 
 hf_token = st.secrets.get("HF_TOKEN", "").strip()
 if not hf_token:
@@ -21,22 +22,50 @@ if not hf_token:
 headers = {"Authorization": f"Bearer {hf_token}"}
 
 
-def get_assistant_reply(messages):
+def stream_assistant_reply(messages, response_placeholder):
     payload = {
         "model": MODEL_NAME,
         "messages": messages,
         "max_tokens": 256,
+        "stream": True,
     }
 
+    response = None
+    full_reply = ""
+
     try:
-        response = requests.post(
+        with requests.post(
             HF_CHAT_URL,
             headers=headers,
             json=payload,
-            timeout=30,
-        )
-        response.raise_for_status()
-        data = response.json()
+            timeout=60,
+            stream=True,
+        ) as response:
+            response.raise_for_status()
+            for raw_line in response.iter_lines(decode_unicode=True):
+                if not raw_line:
+                    continue
+                if not raw_line.startswith("data:"):
+                    continue
+
+                data_str = raw_line[5:].strip()
+                if data_str == "[DONE]":
+                    break
+
+                try:
+                    event = json.loads(data_str)
+                except json.JSONDecodeError:
+                    continue
+
+                choice = (event.get("choices") or [{}])[0]
+                delta = choice.get("delta") or {}
+                content_piece = delta.get("content")
+                if not isinstance(content_piece, str) or not content_piece:
+                    continue
+
+                full_reply += content_piece
+                response_placeholder.write(full_reply)
+                time.sleep(0.01)
     except requests.exceptions.Timeout:
         st.error("Request timed out. The API may be busy; please try again.")
         return None
@@ -44,26 +73,23 @@ def get_assistant_reply(messages):
         st.error("Network error while contacting Hugging Face. Check your connection and try again.")
         return None
     except requests.exceptions.HTTPError:
-        status_code = response.status_code
+        status_code = response.status_code if response is not None else "unknown"
         if status_code in (401, 403):
             st.error("Authentication failed. Check your HF_TOKEN in .streamlit/secrets.toml.")
         elif status_code == 429:
             st.error("Rate limit reached. Please wait and try again.")
         else:
-            st.error(f"API error ({status_code}): {response.text[:300]}")
+            response_body = response.text[:300] if response is not None else ""
+            st.error(f"API error ({status_code}): {response_body}")
         return None
     except requests.exceptions.RequestException as exc:
         st.error(f"Request failed: {exc}")
         return None
-    except ValueError:
-        st.error("API returned invalid JSON.")
-        return None
 
-    try:
-        return data["choices"][0]["message"]["content"]
-    except (KeyError, IndexError, TypeError):
-        st.error("Unexpected API response format.")
+    if not full_reply:
+        st.error("Empty streamed response from API.")
         return None
+    return full_reply
 
 
 def ensure_chats_dir():
@@ -214,9 +240,13 @@ if prompt and active_chat is not None:
         active_chat["title"] = prompt[:28] + ("..." if len(prompt) > 28 else "")
     save_chat(active_chat)
 
-    with st.spinner("Thinking..."):
-        assistant_reply = get_assistant_reply(active_chat["messages"])
-    if assistant_reply is not None:
-        active_chat["messages"].append({"role": "assistant", "content": assistant_reply})
-        save_chat(active_chat)
+    with history_container:
+        with st.chat_message("user"):
+            st.write(prompt)
+        with st.chat_message("assistant"):
+            streamed_placeholder = st.empty()
+            assistant_reply = stream_assistant_reply(active_chat["messages"], streamed_placeholder)
+            if assistant_reply is not None:
+                active_chat["messages"].append({"role": "assistant", "content": assistant_reply})
+                save_chat(active_chat)
     st.rerun()
