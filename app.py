@@ -1,6 +1,6 @@
 import streamlit as st
 
-st.set_page_config(page_title="Week 10 ChatGPT Clone", page_icon="💬")
+st.set_page_config(page_title="Week 10 ChatGPT Clone", page_icon=":speech_balloon:")
 st.title("Week 10: ChatGPT Clone")
 
 if "HF_TOKEN" not in st.secrets:
