@@ -14,7 +14,6 @@ MEMORY_FILE = Path("memory.json")
 
 st.set_page_config(page_title="My AI Chat", layout="wide")
 st.title("My AI Chat")
-st.caption("Task 3: User Memory")
 
 hf_token = st.secrets.get("HF_TOKEN", "").strip()
 if not hf_token:
